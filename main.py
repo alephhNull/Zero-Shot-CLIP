@@ -25,9 +25,42 @@ def load_cifar10_data(root_dir, batch_size=64):
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
 
+    class_names = train_dataset.classes
+
     train_loader = train_loader.to(device)
     test_loader = test_loader.to(device)
 
-    return train_loader, test_loader
+    return train_loader, test_loader, class_names
 
 
+def zero_shot_classification(model, test_loader, class_names, prompt):
+    model.eval()
+    correct = 0
+    total = 0
+    text_inputs = open_clip.tokenize([prompt.format(class_name) for class_name in class_names]).to(device)  
+    text_features = model.encode_text(text_inputs)
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images = images.to(device)
+            image_features = model.encode_image(images)
+            logits_per_image = image_features @ text_features.T
+            probs = logits_per_image.softmax(dim=-1)    
+            _, predicted = torch.max(probs, dim=1)
+            total += labels.size(0)
+            correct += (predicted == labels.to(device)).sum().item()
+
+    return 100 * correct / total
+
+
+def main():
+   encoder = 'ViT-B-32'
+   checkpoint = 'laion2b_s34b_b79k'
+   model = load_pretrained_clip(encoder, checkpoint)
+
+   train_loader, test_loader, class_names = load_cifar10_data('./data', 128)
+   zero_shot_classification(model, test_loader, class_names)
+
+
+if __name__ == '__main__':
+   main()
