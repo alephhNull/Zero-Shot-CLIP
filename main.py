@@ -3,6 +3,10 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 import open_clip
+from tqdm import tqdm
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -33,17 +37,22 @@ def load_cifar10_data(root_dir, batch_size=64):
     return train_loader, test_loader, class_names
 
 
-def zero_shot_classification(model, test_loader, class_names, prompt):
+def zero_shot_classification(model, test_loader, class_names, prompt_template):
     model.eval()
+    text_inputs = open_clip.tokenize([prompt_template.format(class_name) for class_name in class_names]).to(device)
+    with torch.no_grad():
+        text_features = model.encode_text(text_inputs)
+        text_features /= text_features.norm(dim=-1, keepdim=True)
+
+        
     correct = 0
     total = 0
-    text_inputs = open_clip.tokenize([prompt.format(class_name) for class_name in class_names]).to(device)  
-    text_features = model.encode_text(text_inputs)
 
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
             image_features = model.encode_image(images)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
             logits_per_image = image_features @ text_features.T
             probs = logits_per_image.softmax(dim=-1)    
             _, predicted = torch.max(probs, dim=1)
@@ -51,6 +60,42 @@ def zero_shot_classification(model, test_loader, class_names, prompt):
             correct += (predicted == labels.to(device)).sum().item()
 
     return 100 * correct / total
+
+
+def linear_probe_classification(model, train_loader, test_loader):
+    X_train = []
+    y_train = []
+
+    X_test= []
+    y_test = []
+
+    model.eval()
+    with torch.no_grad():
+        for images,labels in tqdm(train_loader, desc='Extracting Train Features...'):
+            images = images.to(device)
+            img_features = model.encode_image(images)
+            X_train.append(img_features.cpu().numpy())
+            y_train.append(labels.cpu().numpy())
+            
+        for images,labels in tqdm(test_loader, desc='Extracting Test Features...'):
+            images = images.to(device)
+            img_features = model.encode_image(images)
+            X_test.append(img_features.cpu().numpy())
+            y_test.append(labels.cpu().numpy())
+        
+            
+    X_train = np.concatenate(X_train, axis=0)
+    y_train = np.concatenate(y_train, axis=0)
+
+    X_test = np.concatenate(X_test, axis=0)
+    y_test = np.concatenate(y_test, axis=0)
+
+    lr = LogisticRegression(random_state=42, max_iter=1000)
+    lr.fit(X_train, y_train)
+
+    y_pred = lr.predict(X_test)
+    acc = 100 * accuracy_score(y_pred, y_test)
+    return acc
 
 
 def main():
