@@ -82,26 +82,32 @@ python cifar10_clip_comparison.py --prompts "this is a {}" "a clear photo of a {
 
 ## Example Output
 - **Console**:
-  ```
-  Computing zero-shot accuracies...
-  Zero-shot accuracy with prompt 'this is a {}': 64.50%
-  Zero-shot accuracy with prompt 'a clear photo of a {}': 65.30%
-  Zero-shot accuracy with prompt 'an image of a {}': 65.00%
-  Ensemble accuracy: 66.50%
-  Computing linear probe accuracy...
-  Linear probe accuracy: 88.00%
+```
+Computing zero-shot accuracies...
+Zero-shot accuracy with prompt 'a photo of a {}': 90.10%
+Zero-shot accuracy with prompt 'a picture of a {}': 89.95%
+Zero-shot accuracy with prompt 'an image of a {}': 89.55%
+Ensemble accuracy: 89.89%
+
+Computing linear probe accuracy...
+Linear probe accuracy: 95.42
 
   Results Table:
-  +-----------------+----------------+------------+
-  | Method          | Prompt         | Accuracy (%) |
-  +-----------------+----------------+------------+
-  | Zero-Shot       | This is        | 64.50      |
-  | Zero-Shot       | Clear photo    | 65.30      |
-  | Zero-Shot       | Image          | 65.00      |
-  | Zero-Shot       | Ensemble       | 66.50      |
-  | Linear Probe    | N/A            | 88.00      |
-  +-----------------+----------------+------------+
-  ```
++--------------+----------------+----------------+
+| Method       | Prompt         |   Accuracy (%) |
++==============+================+================+
+| Zero-Shot    | A photo of a   |          90.10 |
++--------------+----------------+----------------+
+| Zero-Shot    | A picture of a |          89.95 |
++--------------+----------------+----------------+
+| Zero-Shot    | An image of a  |          89.55 |
++--------------+----------------+----------------+
+| Zero-Shot    | Ensemble       |          89.89 |
++--------------+----------------+----------------+
+| Linear Probe | N/A            |          95.42 |
++--------------+----------------+----------------+
+```
+
 - **Plot**: `cifar10_comparison.png` shows a bar plot with accuracies for each prompt, ensemble, and linear probe.
 
 ## Notes
