@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from matplotlib import pyplot as plt
+from tabulate import tabulate
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -42,7 +43,7 @@ def zero_shot_classification(model, test_loader, class_names, prompt_template):
         text_features = model.encode_text(text_inputs)
         text_features /= text_features.norm(dim=-1, keepdim=True)
 
-        
+
     correct = 0
     total = 0
 
@@ -52,7 +53,7 @@ def zero_shot_classification(model, test_loader, class_names, prompt_template):
             image_features = model.encode_image(images)
             image_features /= image_features.norm(dim=-1, keepdim=True)
             logits_per_image = image_features @ text_features.T
-            probs = logits_per_image.softmax(dim=-1)    
+            probs = logits_per_image.softmax(dim=-1)
             _, predicted = torch.max(probs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels.to(device)).sum().item()
@@ -81,7 +82,7 @@ def ensemble_classification(model, test_loader, class_names, prompt_templates):
             image_features = model.encode_image(images)
             image_features /= image_features.norm(dim=-1, keepdim=True)
             logits_per_image = image_features @ ensemble_text_features.T
-            probs = logits_per_image.softmax(dim=-1)    
+            probs = logits_per_image.softmax(dim=-1)
             _, predicted = torch.max(probs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels.to(device)).sum().item()
@@ -102,14 +103,14 @@ def linear_probe_classification(model, train_loader, test_loader):
             img_features = model.encode_image(images)
             X_train.append(img_features.cpu().numpy())
             y_train.append(labels.cpu().numpy())
-            
+
         for images,labels in tqdm(test_loader, desc='Extracting Test Features...'):
             images = images.to(device)
             img_features = model.encode_image(images)
             X_test.append(img_features.cpu().numpy())
             y_test.append(labels.cpu().numpy())
-        
-            
+
+
     X_train = np.concatenate(X_train, axis=0)
     y_train = np.concatenate(y_train, axis=0)
 
@@ -125,7 +126,7 @@ def linear_probe_classification(model, train_loader, test_loader):
 
 
 def visualize_and_compare(prompt_names, zero_shot_accuracies, linear_probe_accuracy, ensemble_accuracy):
-    methods = prompt_names + ['Linear Probe', 'Ensemble']
+    methods = prompt_names + ['Ensemble', 'Linear Probe']
     accuracies = zero_shot_accuracies + [ensemble_accuracy, linear_probe_accuracy]
     colors = ['skyblue'] * len(prompt_names) + ['lightgreen', 'salmon']
     plt.figure(figsize=(10, 6))
@@ -140,37 +141,66 @@ def visualize_and_compare(prompt_names, zero_shot_accuracies, linear_probe_accur
     plt.tight_layout()
     plt.savefig('cifar10_comparison.png')
     plt.show()
+    
+    results = []
+    for name, acc in zip(prompt_names, zero_shot_accuracies):
+        results.append(['Zero-Shot', name, acc])
+    results.append(['Zero-Shot', 'Ensemble', ensemble_accuracy])
+    results.append(['Linear Probe', 'N/A', linear_probe_accuracy])
+    headers = ['Method', 'Prompt', 'Accuracy (%)']
+    print("\nResults Table:")
+    print(tabulate(results, headers=headers, tablefmt='grid', floatfmt='.2f'))
 
 
-def main():
-    encoder = 'ViT-B-32'
-    checkpoint = 'laion2b_s34b_b79k'
-    batch_size = 128
-    data_dir = './data'
-    model, _ = load_pretrained_clip(encoder, checkpoint)
 
-    train_loader, test_loader, class_names = load_cifar10_data(data_dir, batch_size)
-    prompt_templates = [
-        "a photo of a {}",
-        "a picture of a {}",
-        "an image of a {}"
-    ]
 
+def main(args):
+    prompt_names = [prompt.replace('{}', '').strip().capitalize() for prompt in args['prompts']]
+
+    model, _ = load_pretrained_clip(args['encoder'], args['checkpoint'])
+    train_loader, test_loader, class_names = load_cifar10_data(args['data_dir'], args['batch_size'])
+
+    print("\nComputing zero-shot accuracies...")
     zero_shot_accuracies = []
-    linear_probe_accuracy = 0
-    ensemble_accuracy = 0
-
-    for prompt_template in prompt_templates:
-        acc  = zero_shot_classification(model, test_loader, class_names, prompt_template)
+    for prompt_template, name in zip(args['prompts'], prompt_names):
+        acc = zero_shot_classification(model, test_loader, class_names, prompt_template)
         zero_shot_accuracies.append(acc)
         print(f"Zero-shot accuracy with prompt '{prompt_template}': {acc:.2f}%")
-    
+
+    ensemble_accuracy = ensemble_classification(model, test_loader, class_names, args['prompts'])
+    print(f"Ensemble accuracy: {ensemble_accuracy:.2f}%")
+
+    print("\nComputing linear probe accuracy...")
     linear_probe_accuracy = linear_probe_classification(model, train_loader, test_loader)
     print(f"Linear probe accuracy: {linear_probe_accuracy:.2f}%")
 
-    ensemble_accuracy = ensemble_classification(model, test_loader, class_names, prompt_templates)    
-    print(f"Ensemble accuracy: {ensemble_accuracy:.2f}%")
+    visualize_and_compare(prompt_names, zero_shot_accuracies, linear_probe_accuracy, ensemble_accuracy)
+
+
+# Define arguments for Colab
+args = {
+    'prompts': [
+        'a photo of a {}',
+        'a picture of a {}',
+        'an image of a {}'
+    ],
+    'batch_size': 128,
+    'data_dir': './data',
+    'encoder': 'ViT-B-32',
+    'checkpoint': 'laion2b_s34b_b79k',
+}
 
 
 if __name__ == '__main__':
-   main()
+    main(args)
+
+
+    # # Parse command-line arguments
+    # parser = argparse.ArgumentParser(description='Compare zero-shot and linear probe performance on CIFAR-10 with Open CLIP')
+    # parser.add_argument('--prompts', nargs='+', default=['a photo of a {}', 'a picture of a {}', 'an image of a {}'],
+    #                     help='List of prompt templates (e.g., "a photo of a {}")')
+    # parser.add_argument('--batch_size', type=int, default=128, help='Batch size for data loading')
+    # parser.add_argument('--data_dir', type=str, default='./data', help='Directory for CIFAR-10 data')
+    # parser.add_argument('--encoder', type=str, default='ViT-B-32', help='CLIP encoder type')
+    # parser.add_argument('--checkpoint', type=str, default='laion2b_s34b_b79k', help='Pretrained checkpoint')
+    # args = parser.parse_args()
